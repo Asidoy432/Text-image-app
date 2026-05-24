@@ -9,21 +9,24 @@ st.set_page_config(page_title="Multi-modal AI Pro", layout="wide")
 def load_models():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     repo_id = "Asidoy432/Text-image"
-    
-    # Explicitly load from subfolders to avoid ambiguity
+
+    # Explicitly load Text Pipeline using the subfolder path
     text_pipe = pipeline(
-        "text-generation", 
-        model=repo_id, 
-        model_kwargs={"subfolder": "gpt2"}, 
+        "text-generation",
+        model=f"{repo_id}",
+        model_kwargs={"subfolder": "gpt2"},
         device=0 if device == "cuda" else -1
     )
 
+    # For Stable Diffusion, we point directly to the repo. 
+    # If components are in a subfolder, we use from_pretrained on the repo with the subfolder
     pipe = StableDiffusionPipeline.from_pretrained(
-        repo_id, 
+        repo_id,
         subfolder="stable-diffusion-v1-5",
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        use_safetensors=True
     )
-    
+
     pipe.to(device)
     return text_pipe, pipe, device
 
@@ -53,5 +56,4 @@ with tab2:
             image = pipe(img_prompt).images[0]
             st.image(image)
 
-# Sync: Sun May 24 14:38:26 2026
-# Sync: Sun May 24 14:43:04 2026
+# Sync: Sun May 24 14:46:45 2026
