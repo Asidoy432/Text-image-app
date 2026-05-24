@@ -1,30 +1,31 @@
 import streamlit as st
-import requests
 import torch
 from transformers import pipeline
+from huggingface_hub import InferenceClient
+from PIL import Image
+import io
 
 st.set_page_config(page_title="Multi-modal AI Pro", layout="wide")
 
 HF_TOKEN = st.secrets.get("HF_TOKEN", "")
 
-# --- Text Generation (local, lightweight GPT-2) ---
+# --- Text Generation (local GPT-2) ---
 @st.cache_resource
 def load_text_model():
     return pipeline(
         "text-generation",
         model="gpt2",
-        device=-1  # CPU only, fits in 1GB RAM
+        device=-1
     )
 
-# --- Image Generation via HF Inference API (no local loading) ---
-def generate_image_api(prompt: str):
-    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
-    if response.status_code == 200:
-        return response.content  # raw image bytes
-    else:
-        raise Exception(f"API Error {response.status_code}: {response.text}")
+# --- Image Generation via HF InferenceClient ---
+def generate_image_hf(prompt: str) -> Image.Image:
+    client = InferenceClient(
+        model="stabilityai/stable-diffusion-2-1",
+        token=HF_TOKEN
+    )
+    image = client.text_to_image(prompt)
+    return image
 
 st.title("🎨 Multi-modal AI Generator")
 
@@ -50,12 +51,12 @@ with tab1:
 
 with tab2:
     if not HF_TOKEN:
-        st.warning("⚠️ Add your HuggingFace token in Streamlit Secrets as `HF_TOKEN` to enable image generation.")
+        st.warning("⚠️ Add HF_TOKEN in Streamlit Secrets to enable image generation.")
     img_prompt = st.text_input("Image Prompt:", "A robot sitting on a red rock, cinematic lighting")
     if st.button("Generate Image", disabled=not HF_TOKEN):
-        with st.spinner("Painting... (may take 20–30 seconds on cold start)"):
+        with st.spinner("Painting... (may take 20–30 seconds)"):
             try:
-                img_bytes = generate_image_api(img_prompt)
-                st.image(img_bytes)
+                image = generate_image_hf(img_prompt)
+                st.image(image)
             except Exception as e:
                 st.error(f"Image generation failed: {e}")
