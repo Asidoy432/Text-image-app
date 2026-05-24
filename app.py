@@ -10,29 +10,31 @@ def load_models():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     repo_id = "Asidoy432/Text-image"
 
-    # Explicitly load Text Pipeline using the subfolder path
+    # Optimized text pipeline loading
     text_pipe = pipeline(
         "text-generation",
-        model=f"{repo_id}",
-        model_kwargs={"subfolder": "gpt2"},
+        model=repo_id,
+        model_kwargs={"subfolder": "gpt2", "low_cpu_mem_usage": True},
         device=0 if device == "cuda" else -1
     )
 
-    # For Stable Diffusion, we point directly to the repo. 
-    # If components are in a subfolder, we use from_pretrained on the repo with the subfolder
+    # Optimized Stable Diffusion loading
     pipe = StableDiffusionPipeline.from_pretrained(
         repo_id,
         subfolder="stable-diffusion-v1-5",
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        use_safetensors=True
+        use_safetensors=True,
+        low_cpu_mem_usage=True
     )
 
-    pipe.to(device)
+    if device == "cuda":
+        pipe.to(device)
+    
     return text_pipe, pipe, device
 
 st.title("🎨 Multi-modal AI Generator")
 
-with st.spinner("Initializing AI Engine... (2-5 mins on first run)"):
+with st.spinner("Initializing AI Engine... This may take a few minutes."):
     try:
         text_pipe, pipe, device = load_models()
         st.success("Engine Status: Online")
@@ -56,4 +58,4 @@ with tab2:
             image = pipe(img_prompt).images[0]
             st.image(image)
 
-# Sync: Sun May 24 14:46:45 2026
+# Sync: Sun May 24 14:53:27 2026
