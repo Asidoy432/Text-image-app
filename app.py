@@ -57,3 +57,5 @@ with tab2:
                 st.image(image, caption=input_img)
             except Exception as e:
                 st.error(f"Inference Error: {e}")
+
+# Sync: Sun May 24 14:26:20 2026
