@@ -336,8 +336,8 @@ def load_text_model():
 def load_image_model():
     import pickle
     from huggingface_hub import hf_hub_download
+    import torch
 
-    # Download pickle from your repo
     pkl_path = hf_hub_download(
         repo_id=REPO_ID,
         filename="pickle_models/stable_diffusion_v1_5.pkl"
@@ -346,12 +346,27 @@ def load_image_model():
     with open(pkl_path, "rb") as f:
         pipe = pickle.load(f)
 
+    # Force CPU — Streamlit Cloud has no GPU
+    pipe = pipe.to("cpu")
     pipe.enable_attention_slicing()
+
+    # Ensure float32 for CPU
+    pipe.unet = pipe.unet.float()
+    pipe.vae = pipe.vae.float()
+    pipe.text_encoder = pipe.text_encoder.float()
+
     return pipe
 
 def generate_image_local(prompt: str) -> Image.Image:
     pipe = load_image_model()
-    result = pipe(prompt, num_inference_steps=20, guidance_scale=7.5)
+    with torch.no_grad():
+        result = pipe(
+            prompt,
+            num_inference_steps=15,
+            guidance_scale=7.0,
+            height=384,   # smaller = less RAM
+            width=384,
+        )
     return result.images[0]
 
 def pil_to_b64(img: Image.Image) -> str:
@@ -503,12 +518,7 @@ if send and user_input.strip():
                 })
             except Exception as e:
                 err = str(e)
-                if "out of memory" in err.lower():
-                    msg = "❌ Out of memory. Try a shorter prompt or refresh the app."
-                elif "cuda" in err.lower():
-                    msg = "❌ GPU error. The app is running on CPU — generation will be slow but should work."
-                else:
-                    msg = f"❌ {err}"
+                msg = f"❌ {err}"
                 st.session_state.messages.append({
                     "role": "ai", "content": msg, "type": "text"
                 })
