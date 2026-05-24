@@ -1,43 +1,37 @@
 import streamlit as st
+import requests
 import torch
 from transformers import pipeline
-from diffusers import StableDiffusionPipeline
 
 st.set_page_config(page_title="Multi-modal AI Pro", layout="wide")
 
+HF_TOKEN = st.secrets.get("HF_TOKEN", "")
+
+# --- Text Generation (local, lightweight GPT-2) ---
 @st.cache_resource
-def load_models():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    repo_id = "Asidoy432/Text-image"
-
-    # Optimized text pipeline loading
-    text_pipe = pipeline(
+def load_text_model():
+    return pipeline(
         "text-generation",
-        model=repo_id,
-        model_kwargs={"subfolder": "gpt2", "low_cpu_mem_usage": True},
-        device=0 if device == "cuda" else -1
+        model="gpt2",
+        device=-1  # CPU only, fits in 1GB RAM
     )
 
-    # Optimized Stable Diffusion loading
-    pipe = StableDiffusionPipeline.from_pretrained(
-        repo_id,
-        subfolder="stable-diffusion-v1-5",
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        use_safetensors=True,
-        low_cpu_mem_usage=True
-    )
-
-    if device == "cuda":
-        pipe.to(device)
-    
-    return text_pipe, pipe, device
+# --- Image Generation via HF Inference API (no local loading) ---
+def generate_image_api(prompt: str):
+    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+    if response.status_code == 200:
+        return response.content  # raw image bytes
+    else:
+        raise Exception(f"API Error {response.status_code}: {response.text}")
 
 st.title("🎨 Multi-modal AI Generator")
 
-with st.spinner("Initializing AI Engine... This may take a few minutes."):
+with st.spinner("Loading text engine..."):
     try:
-        text_pipe, pipe, device = load_models()
-        st.success("Engine Status: Online")
+        text_pipe = load_text_model()
+        st.success("✅ Engine Status: Online")
     except Exception as e:
         st.error(f"Boot Error: {e}")
         st.stop()
@@ -48,14 +42,20 @@ with tab1:
     prompt = st.text_input("Story Prompt:", "A lonely robot on Mars")
     if st.button("Generate Text"):
         with st.spinner("Writing..."):
-            res = text_pipe(prompt, max_new_tokens=50, pad_token_id=50256)
-            st.write(res[0]['generated_text'])
+            try:
+                res = text_pipe(prompt, max_new_tokens=80, pad_token_id=50256)
+                st.write(res[0]['generated_text'])
+            except Exception as e:
+                st.error(f"Text generation failed: {e}")
 
 with tab2:
+    if not HF_TOKEN:
+        st.warning("⚠️ Add your HuggingFace token in Streamlit Secrets as `HF_TOKEN` to enable image generation.")
     img_prompt = st.text_input("Image Prompt:", "A robot sitting on a red rock, cinematic lighting")
-    if st.button("Generate Image"):
-        with st.spinner("Painting..."):
-            image = pipe(img_prompt).images[0]
-            st.image(image)
-
-# Sync: Sun May 24 14:53:27 2026
+    if st.button("Generate Image", disabled=not HF_TOKEN):
+        with st.spinner("Painting... (may take 20–30 seconds on cold start)"):
+            try:
+                img_bytes = generate_image_api(img_prompt)
+                st.image(img_bytes)
+            except Exception as e:
+                st.error(f"Image generation failed: {e}")
