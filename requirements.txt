@@ -1,8 +1,9 @@
 streamlit
 torch
-transformers==4.38.2
-diffusers==0.26.3
-accelerate==0.27.2
+transformers>=4.38.2
+diffusers>=0.26.3
+huggingface_hub>=0.20.0
+accelerate>=0.27.2
 safetensors
 pillow
 scipy
