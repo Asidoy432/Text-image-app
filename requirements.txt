@@ -1,0 +1,10 @@
+streamlit
+torch
+transformers
+diffusers
+accelerate
+safetensors
+pillow
+scipy
+
+# Note: This file tells Streamlit which libraries to install.
