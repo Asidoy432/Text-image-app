@@ -1,11 +1,10 @@
 import streamlit as st
 import torch
 from transformers import pipeline
-from huggingface_hub import InferenceClient
+from diffusers import StableDiffusionPipeline
 from PIL import Image
 import base64
 import io
-import time
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -15,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-HF_TOKEN = st.secrets.get("HF_TOKEN", "")
+REPO_ID = "Asidoy432/Text-image"
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -325,18 +324,35 @@ if "mode" not in st.session_state:
 # ── Model loaders ─────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_text_model():
+    # Load directly from your HF repo — no API quota
     return pipeline(
         "text-generation",
-        model="gpt2",
+        model=REPO_ID,
+        model_kwargs={"subfolder": "gpt2"},
         device=-1
     )
 
-def generate_image_hf(prompt: str) -> Image.Image:
-    client = InferenceClient(api_key=HF_TOKEN, provider="auto")
-    return client.text_to_image(
-        prompt=prompt,
-        model="black-forest-labs/FLUX.1-dev"
+@st.cache_resource(show_spinner=False)
+def load_image_model():
+    import pickle
+    from huggingface_hub import hf_hub_download
+
+    # Download pickle from your repo
+    pkl_path = hf_hub_download(
+        repo_id=REPO_ID,
+        filename="pickle_models/stable_diffusion_v1_5.pkl"
     )
+
+    with open(pkl_path, "rb") as f:
+        pipe = pickle.load(f)
+
+    pipe.enable_attention_slicing()
+    return pipe
+
+def generate_image_local(prompt: str) -> Image.Image:
+    pipe = load_image_model()
+    result = pipe(prompt, num_inference_steps=20, guidance_scale=7.5)
+    return result.images[0]
 
 def pil_to_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
@@ -388,9 +404,7 @@ st.session_state.mode = mode
 
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-# ── Token warning ─────────────────────────────────────────────────────────────
-if mode == "🖼️ Image" and not HF_TOKEN:
-    st.warning("⚠️ Add `HF_TOKEN` in **Streamlit Secrets** (Settings → Secrets) to enable image generation.")
+# ── Token warning removed — models load directly from HF repo ────────────────
 
 # ── Chat history ──────────────────────────────────────────────────────────────
 if not st.session_state.messages:
@@ -469,7 +483,7 @@ with col1:
 
 with col2:
     send_label = "🎨 Paint" if mode == "🖼️ Image" else "➤ Send"
-    send_disabled = (mode == "🖼️ Image" and not HF_TOKEN)
+    send_disabled = False
     send = st.button(send_label, disabled=send_disabled, use_container_width=True)
 
 # ── Handle send ───────────────────────────────────────────────────────────────
@@ -478,9 +492,9 @@ if send and user_input.strip():
     st.session_state.messages.append({"role": "user", "content": user_msg, "type": "text"})
 
     if mode == "🖼️ Image":
-        with st.spinner("✦ Painting your vision..."):
+        with st.spinner("✦ Painting your vision... (first run may take a few minutes to load the model)"):
             try:
-                img = generate_image_hf(user_msg)
+                img = generate_image_local(user_msg)
                 b64 = pil_to_b64(img)
                 st.session_state.messages.append({
                     "role": "ai",
@@ -489,12 +503,10 @@ if send and user_input.strip():
                 })
             except Exception as e:
                 err = str(e)
-                if "402" in err or "quota" in err.lower():
-                    msg = "❌ HF free quota exceeded. Try again tomorrow."
-                elif "401" in err or "unauthorized" in err.lower():
-                    msg = "❌ Invalid HF_TOKEN. Check your Streamlit Secrets."
-                elif "503" in err or "loading" in err.lower():
-                    msg = "⏳ Model is warming up. Wait 30 seconds and try again."
+                if "out of memory" in err.lower():
+                    msg = "❌ Out of memory. Try a shorter prompt or refresh the app."
+                elif "cuda" in err.lower():
+                    msg = "❌ GPU error. The app is running on CPU — generation will be slow but should work."
                 else:
                     msg = f"❌ {err}"
                 st.session_state.messages.append({
