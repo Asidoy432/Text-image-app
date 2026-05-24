@@ -59,3 +59,5 @@ with tab2:
                 st.image(image, caption=input_img)
             except Exception as e:
                 st.error(f"Inference Error: {e}")
+
+# Updated deployment configuration
